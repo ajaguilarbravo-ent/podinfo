@@ -8,6 +8,7 @@ on:
 
 env:
   CHART_ROOT_FOLDER: charts
+  PUBLIC: 20.103.115.121.nip.io
 
 jobs:
   create-chart:
@@ -41,25 +42,22 @@ jobs:
           sed -i '/0.1.0/ s//0.0.1/g' ${CHART_APP_FOLDER}/Chart.yaml
           sed -i '/1.16.0/ s//0.0.1/g' ${CHART_APP_FOLDER}/Chart.yaml
 
-      - name: Set image
+      - name: Configure values.yaml
         uses: mikefarah/yq@master
         with:
-          cmd: RP=$GITHUB_REPOSITORY yq -i '.image.repository = env(RP)' ${{ env.CHART_APP_FOLDER }}/values.yaml
+          cmd: |
+            RP=$GITHUB_REPOSITORY yq -i '.image.repository = env(RP)' ${{ env.CHART_APP_FOLDER }}/values.yaml
+            yq -i '.ingress.enabled = true' ${{ env.CHART_APP_FOLDER }}/values.yaml
+            yq -i '.ingress.className = "nginx"' ${{ env.CHART_APP_FOLDER }}/values.yaml
 
-      - name: Set ingress
+      - name: Set TLS config
         uses: mikefarah/yq@master
         with:
-          cmd: yq -i '.ingress.enabled = true' ${{ env.CHART_APP_FOLDER }}/values.yaml
-
-      - name: Set ingress className
-        uses: mikefarah/yq@master
-        with:
-          cmd: yq -i '.ingress.className = "nginx"' ${{ env.CHART_APP_FOLDER }}/values.yaml
-
-      - name: Set annotations
-        uses: mikefarah/yq@master
-        with:
-          cmd: yq -i '.ingress.annotations."kubernetes.io/ingress.class"="nginx"' ${{ env.CHART_APP_FOLDER }}/values.yaml
+          cmd: |
+            yq -i '.ingress.annotations."cert-manager.io/cluster-issuer"="letsencrypt"' ${{ env.CHART_APP_FOLDER }}/values.yaml
+            PUBLIC=$PUBLIC RP=$REPO_NAME yq -i '.ingress.tls = {"hosts": [env(RP)+"."+env(PUBLIC)], "secretName": env(RP)+"-tls"}' ${{ env.CHART_APP_FOLDER }}/values.yaml
+            PUBLIC=$PUBLIC RP=$REPO_NAME yq -i '.ingress.hosts[0] = {"host": env(RP)+"."+env(PUBLIC)}' ${{ env.CHART_APP_FOLDER }}/values.yaml
+            yq -i '.ingress.hosts[0].paths[0].path = "/" | .ingress.hosts[0].paths[0].pathType= "ImplementationSpecific"' ${{ env.CHART_APP_FOLDER }}/values.yaml
 
       - name: Commit changes
         run: |
@@ -73,3 +71,5 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           force: true
+          
+
